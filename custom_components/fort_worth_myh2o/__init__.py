@@ -1,19 +1,18 @@
-"""
-"Fort Worth MyH2O integration for Home Assistant.
-"""
+"""Fort Worth MyH2O integration for Home Assistant."""
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
-from .coordinator import MyH2ODataUpdateCoordinator
+from .coordinator import FWMH2ODataUpdateCoordinator
 
 PLATFORMS = ["sensor"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
+    """Set up Fort Worth MyH2O from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
     # Create coordinator
-    coordinator = MyH2ODataUpdateCoordinator(hass, entry)
+    coordinator = FWMH2ODataUpdateCoordinator(hass, entry)
 
     # Perform initial data load
     await coordinator.async_config_entry_first_refresh()
@@ -21,13 +20,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     # Store coordinator so platforms can access it
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Forward setup to sensor (and other) platforms
+    # Forward setup to sensor platform
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
+    """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
