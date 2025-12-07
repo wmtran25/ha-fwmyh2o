@@ -3,9 +3,11 @@
   "name": "Fort Worth MyH2O",
   "version": "1.0.0",
   "documentation": "https://github.com/wmtran25/ha-fwmyh2o",
-  "requirements": ["beautifulsoup4>=4.9.0"],
   "dependencies": [],
   "codeowners": ["@wmtran25"],
-  "config_flow": true,
+  "requirements": [
+    "aiohttp>=3.8.0",
+    "beautifulsoup4>=4.12.2"
+  ],
   "iot_class": "cloud_polling"
 }
