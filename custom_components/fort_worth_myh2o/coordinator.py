@@ -1,22 +1,16 @@
-"""
-Coordinator that logs in and fetches usage data from the Fort Worth MyH2O portal.
-This implementation uses aiohttp and BeautifulSoup to scrape the usage pages.
-"""
+"""Coordinator that logs in and fetches usage data from the Fort Worth MyH2O portal."""
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import timedelta
+import re
 
 from aiohttp import ClientSession
 from bs4 import BeautifulSoup
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.update_coordinator import (
-    DataUpdateCoordinator,
-    UpdateFailed,
-)
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DEFAULT_SCAN_INTERVAL, CONF_SCAN_INTERVAL
 
@@ -27,6 +21,8 @@ USAGE_URL = "https://fwmyh2o.smartcmobile.com/portal/usages.aspx?type=WU"
 
 
 class FWMH2ODataUpdateCoordinator(DataUpdateCoordinator):
+    """Coordinator for fetching Fort Worth MyH2O usage data."""
+
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass = hass
         self.entry = entry
@@ -62,50 +58,29 @@ class FWMH2ODataUpdateCoordinator(DataUpdateCoordinator):
             return await resp.text()
 
     async def _async_login(self) -> None:
-        """Attempt to login to the portal. If the portal uses JavaScript-based auth this may fail; we try a form post first."""
+        """Attempt to login to the portal."""
         try:
-            # Fetch login page to get any viewstate/hidden fields
             html = await self._async_get(LOGIN_URL)
             soup = BeautifulSoup(html, "html.parser")
-            form = {}
-            for inp in soup.find_all("input"):
-                name = inp.get("name")
-                if not name:
-                    continue
-                val = inp.get("value", "")
-                form[name] = val
+            form = {inp.get("name"): inp.get("value", "") for inp in soup.find_all("input") if inp.get("name")}
 
-            # Guess common field names
-            form_fields = {
+            form.update({
                 "ctl00$ContentPlaceHolder1$txtUsername": self.username,
                 "ctl00$ContentPlaceHolder1$txtPassword": self.password,
-            }
-            form.update(form_fields)
+            })
 
-            # Post the form
             await self._async_post(LOGIN_URL, data=form)
         except Exception as err:
             _LOGGER.debug("Login attempt failed: %s", err)
-            # Don't raise here; the usage page may be accessible without explicit login
+            # Continue; sometimes the usage page is accessible without login
 
     async def _async_parse_usage(self, html: str) -> dict:
-        """Parse usage HTML and return a dict with current, daily, monthly."""
+        """Parse usage HTML and return dict with current, daily, monthly usage."""
         soup = BeautifulSoup(html, "html.parser")
+        data = {"current_reading": None, "daily_usage": None, "monthly_usage": None, "account": None}
 
-        data = {
-            "current_reading": None,
-            "daily_usage": None,
-            "monthly_usage": None,
-            "account": None,
-        }
-
-        # Attempt to find labels that often appear on the page. The exact markup may vary.
-        # Find current reading by searching for keywords and nearby numeric values
         text = soup.get_text(" ", strip=True)
 
-        import re
-
-        # Find large floating numbers that look like gallons (e.g., 1,234.56)
         numbers = re.findall(r"[0-9,.]+", text)
 
         def to_float(s: str) -> float | None:
@@ -114,7 +89,7 @@ class FWMH2ODataUpdateCoordinator(DataUpdateCoordinator):
             except Exception:
                 return None
 
-        # Heuristics: last few numbers in the page may be the readings. We'll attempt to find lines with 'Total' or 'Reading'
+        # Find current reading
         for label in ["Total", "Reading", "Current", "Meter"]:
             idx = text.find(label)
             if idx != -1:
@@ -126,12 +101,10 @@ class FWMH2ODataUpdateCoordinator(DataUpdateCoordinator):
                         data["current_reading"] = val
                         break
 
-        # If not found, try the largest number as a fallback
         if data["current_reading"] is None and numbers:
             val = max((to_float(n) or 0) for n in numbers)
             data["current_reading"] = val
 
-        # Daily and monthly: try to find phrases 'Last 24 Hours' or 'This Month'
         daily_match = re.search(r"Last\s*24\s*Hours[^0-9]*([0-9,.]+)", text, re.IGNORECASE)
         if daily_match:
             data["daily_usage"] = to_float(daily_match.group(1))
@@ -140,7 +113,6 @@ class FWMH2ODataUpdateCoordinator(DataUpdateCoordinator):
         if month_match:
             data["monthly_usage"] = to_float(month_match.group(1))
 
-        # Try to find 'Account' or 'Service Address'
         acc_match = re.search(r"Account[:#]*\s*([A-Za-z0-9-]+)", text, re.IGNORECASE)
         if acc_match:
             data["account"] = acc_match.group(1)
@@ -148,13 +120,10 @@ class FWMH2ODataUpdateCoordinator(DataUpdateCoordinator):
         return data
 
     async def _async_update_data(self) -> dict:
-        """Fetch data from the portal and return parsed values."""
+        """Fetch and parse usage data."""
         try:
             await self._async_login()
             html = await self._async_get(USAGE_URL)
-            # parsed = await asyncio.get_running_loop().run_in_executor(None, lambda: self.hass.async_add_job(lambda: parsed) )
-            # Note: above is a placeholder to emphasize parser should not block — instead just call parse directly
-            # We'll call parse synchronously here because BeautifulSoup is relatively fast for small pages
             parsed = await self._async_parse_usage(html)
             return parsed
         except Exception as err:
