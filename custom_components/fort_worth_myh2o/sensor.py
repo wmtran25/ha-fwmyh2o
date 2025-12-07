@@ -9,8 +9,9 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 
+
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
-    """Set up sensors for Fort Worth MyH2O."""
+    """Set up sensors for Fort Worth MyH2O integration."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
     unique_base = f"{entry.entry_id}_{entry.data.get(CONF_USERNAME)}"
 
@@ -50,6 +51,11 @@ class BaseSensor(CoordinatorEntity, SensorEntity):
 
 
 class CurrentReadingSensor(BaseSensor):
+    """Sensor for the current meter reading."""
+
+    def __init__(self, coordinator, unique_base):
+        super().__init__(coordinator, unique_base, name="Current Reading", key="current_reading")
+
     @property
     def state(self):
         return self.coordinator.data.get("current_reading")
@@ -68,6 +74,11 @@ class CurrentReadingSensor(BaseSensor):
 
 
 class DailyUsageSensor(BaseSensor):
+    """Sensor for daily water usage."""
+
+    def __init__(self, coordinator, unique_base):
+        super().__init__(coordinator, unique_base, name="Daily Usage", key="daily_usage")
+
     @property
     def state(self):
         return self.coordinator.data.get("daily_usage")
@@ -82,6 +93,11 @@ class DailyUsageSensor(BaseSensor):
 
 
 class MonthlyUsageSensor(BaseSensor):
+    """Sensor for monthly water usage."""
+
+    def __init__(self, coordinator, unique_base):
+        super().__init__(coordinator, unique_base, name="Monthly Usage", key="monthly_usage")
+
     @property
     def state(self):
         return self.coordinator.data.get("monthly_usage")
