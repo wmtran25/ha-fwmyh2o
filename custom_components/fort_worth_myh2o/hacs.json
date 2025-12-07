@@ -1,0 +1,6 @@
+{
+  "name": "Fort Worth MyH2O",
+  "content": "integration",
+  "homeassistant": "2021.12.0",
+  "render_readme": true
+}
