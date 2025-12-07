@@ -1,7 +1,8 @@
 {
-  "name": "FW MyH2O Water Usage",
-  "render_readme": true,
-  "country": ["us"],
+  "name": "Fort Worth MyH2O",
+  "content_in_root": false,
   "domains": ["sensor"],
-  "homeassistant": "2024.1.0"
+  "homeassistant": "2024.1.0",
+  "render_readme": true,
+  "country": ["us"]
 }
