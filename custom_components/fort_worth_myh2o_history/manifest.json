@@ -1,0 +1,8 @@
+{
+  "domain": "fort_worth_myh2o_history",
+  "name": "FWMyH2O History Importer",
+  "version": "0.1.0",
+  "requirements": [],
+  "dependencies": [],
+  "codeowners": []
+}
