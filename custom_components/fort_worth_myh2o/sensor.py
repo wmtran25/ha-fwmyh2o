@@ -1,6 +1,4 @@
-"""
-Sensors for the Fort Worth MyH2O integration.
-"""
+"""Sensors for the Fort Worth MyH2O integration."""
 from __future__ import annotations
 
 from homeassistant.components.sensor import SensorEntity
@@ -11,12 +9,9 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 
-ATTR_ACCOUNT = "account"
-
-
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
+    """Set up sensors for Fort Worth MyH2O."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
-
     unique_base = f"{entry.entry_id}_{entry.data.get(CONF_USERNAME)}"
 
     entities = [
@@ -29,6 +24,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
 
 
 class BaseSensor(CoordinatorEntity, SensorEntity):
+    """Base sensor using DataUpdateCoordinator."""
+
     def __init__(self, coordinator, unique_base: str, name: str, key: str):
         super().__init__(coordinator)
         self._name = name
