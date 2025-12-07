@@ -1,0 +1,8 @@
+fort_worth_myh2o_history:
+  # daily import time (24h, local) - default "02:05"
+  import_time: "02:05"
+  # entity_id for the cumulative sensor
+  entity_id: sensor.fwmyh2o_cumulative
+  # timezone-aware timestamps are used via HA's timezone - no need to supply tz here.
+  # optional: debug logging
+  debug: false
