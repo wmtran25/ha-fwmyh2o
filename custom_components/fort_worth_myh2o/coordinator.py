@@ -152,7 +152,7 @@ class FWMH2ODataUpdateCoordinator(DataUpdateCoordinator):
         try:
             await self._async_login()
             html = await self._async_get(USAGE_URL)
-            parsed = await asyncio.get_running_loop().run_in_executor(None, lambda: self.hass.async_add_job(lambda: parsed) )
+            # parsed = await asyncio.get_running_loop().run_in_executor(None, lambda: self.hass.async_add_job(lambda: parsed) )
             # Note: above is a placeholder to emphasize parser should not block — instead just call parse directly
             # We'll call parse synchronously here because BeautifulSoup is relatively fast for small pages
             parsed = await self._async_parse_usage(html)
