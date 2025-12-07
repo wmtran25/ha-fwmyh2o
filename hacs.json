@@ -1,0 +1,7 @@
+{
+  "name": "FW MyH2O Water Usage",
+  "render_readme": true,
+  "country": ["us"],
+  "domains": ["sensor"],
+  "homeassistant": "2024.1.0"
+}
