@@ -1,19 +1,18 @@
-"""historical_import.py - create backdated cumulative sensor states by firing state_changed events."""
+"""historical_import.py - create backdated hourly delta states by firing state_changed events."""
 
 from __future__ import annotations
 
-from datetime import datetime
 import logging
+from datetime import datetime, timedelta
 from typing import List, Dict
 
 import homeassistant.util.dt as dt_util
 from homeassistant.core import HomeAssistant
-from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT
 
 _LOGGER = logging.getLogger(__name__)
 
-# Constants for the cumulative sensor: gallons
 UNIT = "gal"
+
 
 def _ensure_tz(dt: datetime) -> datetime:
     """Ensure datetime is timezone aware (convert naive as local)."""
@@ -21,23 +20,23 @@ def _ensure_tz(dt: datetime) -> datetime:
         return dt_util.as_local(dt)
     return dt
 
-def import_cumulative_readings(hass: HomeAssistant, entity_id: str, readings: List[Dict]):
-    """
-    Insert cumulative readings (one per hour) into HA by firing state_changed events
-    with the original timestamp.
 
-    readings: list of dicts:
-      - 'timestamp': datetime (should be tz-aware or local naive)
-      - 'cumulative': numeric (float/int)
+def import_hourly_deltas_from_cumulative(hass: HomeAssistant, entity_id: str, readings: List[Dict]):
+    """
+    Given cumulative readings (list of {timestamp, cumulative}), compute hourly deltas
+    and fire state_changed events with the original timestamps but state equal to the delta.
+
+    This will create a time series of hourly consumption values for `entity_id`.
     """
 
     if not readings:
         _LOGGER.debug("No readings to import for %s", entity_id)
         return
 
-    # Sort readings by timestamp ascending to insert in chronological order
+    # sort ascending by timestamp
     readings_sorted = sorted(readings, key=lambda r: r["timestamp"])
 
+    prev_cum = None
     for r in readings_sorted:
         ts = r.get("timestamp")
         cum = r.get("cumulative")
@@ -46,25 +45,36 @@ def import_cumulative_readings(hass: HomeAssistant, entity_id: str, readings: Li
             continue
 
         ts = _ensure_tz(ts)
-        # convert to UTC isoformat for fields
+        # compute delta vs previous cumulative (if prev is None, delta = cum)
+        if prev_cum is None:
+            delta = float(cum)
+        else:
+            delta = float(cum) - float(prev_cum)
+            if delta < 0:
+                # guard against negative rollovers; set to 0
+                _LOGGER.warning("Negative delta detected at %s (prev=%s curr=%s); setting delta=0", ts.isoformat(), prev_cum, cum)
+                delta = 0.0
+
+        prev_cum = cum
+
+        # convert to UTC isoformat
         ts_utc = dt_util.as_utc(ts).isoformat()
 
-        _LOGGER.debug("Importing cumulative reading for %s at %s = %s %s", entity_id, ts_utc, cum, UNIT)
+        _LOGGER.debug("Importing hourly delta for %s at %s = %s %s", entity_id, ts_utc, delta, UNIT)
 
         # Fire state_changed event with new_state containing timestamps.
-        # The recorder may accept this as a historical state if it honors the provided timestamps.
         hass.bus.async_fire(
             "state_changed",
             {
                 "entity_id": entity_id,
                 "old_state": None,
                 "new_state": {
-                    "state": str(cum),
+                    "state": str(round(delta, 6)),
                     "attributes": {
                         "unit_of_measurement": UNIT,
-                        # To help HA treat it properly as cumulative meter reading:
                         "device_class": "water",
-                        "state_class": "total_increasing"
+                        "state_class": "measurement",
+                        "source": "fwmyh2o_history"
                     },
                     "last_updated": ts_utc,
                     "last_changed": ts_utc

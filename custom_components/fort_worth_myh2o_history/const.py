@@ -1,4 +1,11 @@
-DOMAIN = "fwmyh2o_history"
-ATTR_IMPORT_TIME = "import_time"
-ATTR_ENTITY_ID = "entity_id"
-DEFAULT_IMPORT_TIME = "02:05"
+{
+  "domain": "fort_worth_myh2o_history",
+  "name": "FWMyH2O History Importer",
+  "version": "0.1.1",
+  "requirements": [
+    "beautifulsoup4>=4.11.1",
+    "requests>=2.28.1"
+  ],
+  "dependencies": [],
+  "codeowners": []
+}

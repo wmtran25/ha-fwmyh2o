@@ -1,97 +1,83 @@
-# fetcher.py — Fort Worth MyH2O hourly cumulative history fetcher
+"""historical_import.py - create backdated hourly delta states by firing state_changed events."""
 
 from __future__ import annotations
+
 import logging
 from datetime import datetime, timedelta
 from typing import List, Dict
-import json
+
 import homeassistant.util.dt as dt_util
-import requests
+from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
-API_URL = "https://fwmyh2o.smartcmobile.com/Portal/Usages.aspx/LoadWaterUsage"
-
-HEADERS = {
-    "Content-Type": "application/json; charset=utf-8",
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
-}
+UNIT = "gal"
 
 
-async def fetch_cumulative_readings_for_date(hass, date) -> List[Dict]:
+def _ensure_tz(dt: datetime) -> datetime:
+    """Ensure datetime is timezone aware (convert naive as local)."""
+    if dt.tzinfo is None:
+        return dt_util.as_local(dt)
+    return dt
+
+
+def import_hourly_deltas_from_cumulative(hass: HomeAssistant, entity_id: str, readings: List[Dict]):
     """
-    POST to Fort Worth MyH2O API to fetch hourly cumulative usage for a given date.
+    Given cumulative readings (list of {timestamp, cumulative}), compute hourly deltas
+    and fire state_changed events with the original timestamps but state equal to the delta.
 
-    Returns a list of dicts like:
-      { "timestamp": datetime, "cumulative": float }
+    This will create a time series of hourly consumption values for `entity_id`.
     """
 
-    # MyH2O expects mm/dd/yyyy format
-    req_date_str = date.strftime("%m/%d/%Y")
+    if not readings:
+        _LOGGER.debug("No readings to import for %s", entity_id)
+        return
 
-    payload = {
-        "Type": "C",
-        "Mode": "H",
-        "strDate": req_date_str,
-        "hourlyType": "H",
-        "seasonId": 0,
-        "weatherOverlay": 0,
-        "usageyear": "",
-        "MeterNumber": "",
-        "DateFromDaily": "",
-        "DateToDaily": "",
-        "isNoDashboard": True
-    }
+    # sort ascending by timestamp
+    readings_sorted = sorted(readings, key=lambda r: r["timestamp"])
 
-    _LOGGER.debug("Posting usage request for date=%s", req_date_str)
-
-    try:
-        resp = requests.post(API_URL, headers=HEADERS, data=json.dumps(payload), timeout=20)
-        resp.raise_for_status()
-
-    except Exception as e:
-        _LOGGER.error("API request failed: %s", e)
-        return []
-
-    try:
-        # Response JSON field "d" contains another JSON string
-        raw_json = resp.json().get("d")
-        parsed = json.loads(raw_json)
-        hourly_list = parsed.get("objUsageGenerationResultSetTwo", [])
-
-    except Exception as e:
-        _LOGGER.error("Error parsing response JSON: %s", e)
-        return []
-
-    results = []
-    tz = dt_util.get_time_zone(hass.config.time_zone)
-
-    for entry in hourly_list:
-        usage_date = entry.get("UsageDate")
-        hourly_str = entry.get("Hourly")
-        val = entry.get("UsageValue", 0.0)
-
-        if not usage_date or not hourly_str:
+    prev_cum = None
+    for r in readings_sorted:
+        ts = r.get("timestamp")
+        cum = r.get("cumulative")
+        if ts is None or cum is None:
+            _LOGGER.warning("Skipping invalid reading: %s", r)
             continue
 
-        try:
-            # UsageDate always mm/dd/yyyy
-            base_date = datetime.strptime(usage_date, "%m/%d/%Y")
+        ts = _ensure_tz(ts)
+        # compute delta vs previous cumulative (if prev is None, delta = cum)
+        if prev_cum is None:
+            delta = float(cum)
+        else:
+            delta = float(cum) - float(prev_cum)
+            if delta < 0:
+                # guard against negative rollovers; set to 0
+                _LOGGER.warning("Negative delta detected at %s (prev=%s curr=%s); setting delta=0", ts.isoformat(), prev_cum, cum)
+                delta = 0.0
 
-            # Parse hour like "12:00 AM"
-            hour_dt = datetime.strptime(hourly_str, "%I:%M %p")
+        prev_cum = cum
 
-            dt_full = datetime.combine(base_date, hour_dt.time())
-            dt_full = tz.localize(dt_full)
+        # convert to UTC isoformat
+        ts_utc = dt_util.as_utc(ts).isoformat()
 
-            results.append({
-                "timestamp": dt_full,
-                "cumulative": float(val)
-            })
+        _LOGGER.debug("Importing hourly delta for %s at %s = %s %s", entity_id, ts_utc, delta, UNIT)
 
-        except Exception as e:
-            _LOGGER.warning("Could not parse timestamp from entry: %s", e)
-
-    _LOGGER.info("Fetched %d hourly readings for %s", len(results), req_date_str)
-
-    return results
+        # Fire state_changed event with new_state containing timestamps.
+        hass.bus.async_fire(
+            "state_changed",
+            {
+                "entity_id": entity_id,
+                "old_state": None,
+                "new_state": {
+                    "state": str(round(delta, 6)),
+                    "attributes": {
+                        "unit_of_measurement": UNIT,
+                        "device_class": "water",
+                        "state_class": "measurement",
+                        "source": "fwmyh2o_history"
+                    },
+                    "last_updated": ts_utc,
+                    "last_changed": ts_utc
+                }
+            }
+        )
